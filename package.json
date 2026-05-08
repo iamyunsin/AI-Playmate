@@ -1,0 +1,13 @@
+{
+  "name": "ai-playmate",
+  "private": true,
+  "version": "0.1.0",
+  "description": "AI Playmate — cross-platform AI companion with associative memory",
+  "scripts": {
+    "dev": "pnpm --filter desktop dev",
+    "build": "pnpm --filter desktop build",
+    "lint": "pnpm --filter desktop lint",
+    "typecheck": "pnpm --filter desktop typecheck",
+    "tauri": "pnpm --filter desktop tauri"
+  }
+}

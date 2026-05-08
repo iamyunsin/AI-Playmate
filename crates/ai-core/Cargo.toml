@@ -1,0 +1,33 @@
+[package]
+name        = "ai-playmate-core"
+version.workspace   = true
+edition.workspace   = true
+license.workspace   = true
+repository.workspace = true
+
+[dependencies]
+# Async
+tokio       = { workspace = true }
+futures     = { workspace = true }
+async-trait = { workspace = true }
+# Error handling
+anyhow      = { workspace = true }
+thiserror   = { workspace = true }
+# Serialization
+serde       = { workspace = true }
+serde_json  = { workspace = true }
+# Logging
+tracing     = { workspace = true }
+# Identifiers & time
+uuid        = { workspace = true }
+chrono      = { workspace = true }
+# LLM providers
+rig-core     = { workspace = true }
+async-openai = { workspace = true }
+# HTTP client (for custom provider calls)
+reqwest      = { workspace = true }
+# Local embeddings
+fastembed    = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }

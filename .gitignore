@@ -1,0 +1,45 @@
+# Rust build artifacts
+/target/
+**/target/
+
+# Cargo lock for libraries (keep lock for applications)
+# Cargo.lock  ← intentionally kept for the desktop app
+
+# Node / pnpm
+node_modules/
+**/node_modules/
+.pnpm-store/
+
+# Frontend build output
+apps/desktop/dist/
+
+# Tauri generated files
+apps/desktop/src-tauri/gen/
+
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+
+# Editor / OS
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Test coverage
+coverage/
+
+# SurrealDB data files
+*.db
+*.db-wal
+*.db-shm
+
+# Qdrant local data
+qdrant_storage/

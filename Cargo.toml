@@ -1,0 +1,68 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/ai-core",
+    "crates/memory",
+    "crates/storage",
+    "apps/desktop/src-tauri",
+]
+
+[workspace.package]
+version     = "0.1.0"
+edition     = "2021"
+license     = "MIT"
+repository  = "https://github.com/iamyunsin/AI-Playmate"
+authors     = ["iamyunsin"]
+
+# ---------------------------------------------------------------------------
+# Shared dependency versions — individual crates opt-in via `workspace = true`
+# ---------------------------------------------------------------------------
+[workspace.dependencies]
+# Async runtime
+tokio        = { version = "1",    features = ["full"] }
+futures      = "0.3"
+async-trait  = "0.1"
+
+# Error handling
+anyhow       = "1"
+thiserror    = "2"
+
+# Serialization
+serde        = { version = "1", features = ["derive"] }
+serde_json   = "1"
+
+# Logging / tracing
+tracing            = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Identifiers & time
+uuid    = { version = "1", features = ["v4", "serde"] }
+chrono  = { version = "0.4", features = ["serde"] }
+
+# HTTP client (needed by some AI providers)
+reqwest = { version = "0.12", features = ["json", "stream"] }
+
+# ---------------------------------------------------------------------------
+# AI / LLM
+# ---------------------------------------------------------------------------
+# rig-core: unified interface to 20+ LLM providers (OpenAI, Anthropic, Gemini…)
+rig-core      = "0.9"
+# async-openai: OpenAI-compatible API client (also works with Ollama, Azure…)
+async-openai  = "0.28"
+# fastembed: local CPU embedding inference (no external service required)
+fastembed     = "4"
+
+# ---------------------------------------------------------------------------
+# Storage
+# ---------------------------------------------------------------------------
+# qdrant-client: vector database (Rust-native, also has Qdrant Edge for mobile)
+qdrant-client = "1"
+# surrealdb: graph + document + relational — single binary, embedded via SurrealKV (pure Rust)
+surrealdb     = { version = "2", features = ["kv-surrealkv"] }
+
+# ---------------------------------------------------------------------------
+# Internal workspace crates
+# ---------------------------------------------------------------------------
+ai-playmate-core    = { path = "crates/ai-core"  }
+ai-playmate-memory  = { path = "crates/memory"   }
+ai-playmate-storage = { path = "crates/storage"  }

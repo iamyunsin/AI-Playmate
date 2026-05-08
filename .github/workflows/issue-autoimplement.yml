@@ -1,0 +1,163 @@
+name: AI Auto-Implement Issue
+
+# Trigger: add the label "ai-implement" to an issue
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  issues: write
+  pull-requests: write
+  contents: write
+
+jobs:
+  auto-implement:
+    name: AI Auto-Implement
+    runs-on: ubuntu-latest
+    if: github.event.label.name == 'ai-implement'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_PAT }}  # needs repo:write scope
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "AI Developer Bot"
+          git config user.email "ai-bot@users.noreply.github.com"
+
+      - name: Extract issue info
+        id: issue
+        env:
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          BRANCH="feat/issue-${ISSUE_NUMBER}-$(echo '${{ github.event.issue.title }}' | tr '[:upper:] ' '[:lower:]-' | tr -cd '[:alnum:]-' | head -c 40)"
+          echo "branch=${BRANCH}" >> $GITHUB_OUTPUT
+          echo "ISSUE_NUMBER=${ISSUE_NUMBER}" >> $GITHUB_ENV
+          echo "ISSUE_TITLE=${ISSUE_TITLE}" >> $GITHUB_ENV
+
+      - name: Comment: starting work
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue comment "$ISSUE_NUMBER" \
+            --body "🤖 **AI Developer Agent** is starting work on this issue.
+            
+            Branch: \`${{ steps.issue.outputs.branch }}\`
+            
+            I will:
+            1. Analyse the requirement
+            2. Implement the changes
+            3. Write tests
+            4. Open a PR for review"
+
+      - name: Create feature branch
+        run: |
+          git checkout -b "${{ steps.issue.outputs.branch }}"
+
+      - name: AI Implementation
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ISSUE_TITLE: ${{ github.event.issue.title }}
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          # Gather project context
+          TREE=$(find . -type f \( -name "*.rs" -o -name "*.ts" -o -name "*.tsx" \) \
+            -not -path "*/target/*" -not -path "*/node_modules/*" | head -60)
+          
+          COPILOT_INSTRUCTIONS=$(cat .github/copilot-instructions.md 2>/dev/null || echo "")
+          
+          PROMPT="You are an expert Rust/TypeScript developer implementing a feature for the AI Playmate project.
+
+          Project conventions:
+          ${COPILOT_INSTRUCTIONS}
+
+          Issue Title: ${ISSUE_TITLE}
+          Issue Description:
+          ${ISSUE_BODY}
+
+          Current project files:
+          ${TREE}
+
+          Your task:
+          1. Analyse what needs to be implemented
+          2. Output a JSON plan: {\"files_to_create\": [{\"path\": \"...\", \"content\": \"...\"}], \"files_to_modify\": [{\"path\": \"...\", \"changes\": \"...\"}], \"explanation\": \"...\"}
+          3. Keep changes minimal and focused on the issue
+          4. Follow all Rust/TypeScript conventions from the project instructions
+          5. Include unit tests for new Rust functions"
+
+          # Call AI to get implementation plan
+          if [ -n "$OPENAI_API_KEY" ]; then
+            PLAN=$(curl -s https://api.openai.com/v1/chat/completions \
+              -H "Authorization: Bearer $OPENAI_API_KEY" \
+              -H "Content-Type: application/json" \
+              -d "{
+                \"model\": \"gpt-4o\",
+                \"messages\": [{\"role\": \"user\", \"content\": $(echo "$PROMPT" | jq -Rs .)}],
+                \"max_tokens\": 8000,
+                \"temperature\": 0.2,
+                \"response_format\": {\"type\": \"json_object\"}
+              }" | jq -r '.choices[0].message.content')
+          else
+            echo "No API key available. Skipping AI implementation."
+            exit 0
+          fi
+
+          echo "$PLAN" > /tmp/implementation_plan.json
+
+          # Apply file creations
+          echo "$PLAN" | jq -r '.files_to_create[]? | "\(.path)|\(.content)"' | while IFS='|' read -r path content; do
+            mkdir -p "$(dirname "$path")"
+            echo "$content" > "$path"
+            echo "Created: $path"
+          done
+
+          echo "Implementation plan saved to /tmp/implementation_plan.json"
+
+      - name: Commit changes
+        run: |
+          git add -A
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "feat: implement #${ISSUE_NUMBER} - ${ISSUE_TITLE}
+
+            Automated implementation by AI Developer Agent.
+            Closes #${ISSUE_NUMBER}"
+          fi
+
+      - name: Push branch
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          git push origin "${{ steps.issue.outputs.branch }}" || echo "Push failed or nothing to push"
+
+      - name: Create Pull Request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ steps.issue.outputs.branch }}
+        run: |
+          PLAN_EXPLANATION=$(cat /tmp/implementation_plan.json | jq -r '.explanation // "See changes"' 2>/dev/null || echo "Automated implementation")
+          
+          gh pr create \
+            --title "feat: ${{ github.event.issue.title }}" \
+            --body "## Summary
+          Closes #${ISSUE_NUMBER}
+
+          ## Implementation Notes
+          ${PLAN_EXPLANATION}
+
+          ## Checklist
+          - [x] Implemented by AI Developer Agent
+          - [ ] Tests pass (CI)
+          - [ ] Human review required
+          - [ ] AI Reviewer Agent review posted
+
+          ---
+          *This PR was automatically created by the AI Developer Agent.*" \
+            --head "${BRANCH}" \
+            --base main \
+            --label "ai-generated" || echo "PR creation failed — branch may have no commits"
