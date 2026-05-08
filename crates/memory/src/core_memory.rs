@@ -52,7 +52,7 @@ impl CoreMemory {
     pub async fn update(&self, record: CoreMemoryRecord) -> Result<()> {
         debug!("Updating core memory");
         self.store
-            .upsert(CORE_MEMORY_TABLE, CORE_MEMORY_ID, &record)
+            .upsert(CORE_MEMORY_TABLE, CORE_MEMORY_ID, record)
             .await?;
         Ok(())
     }

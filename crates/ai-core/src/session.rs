@@ -132,6 +132,19 @@ impl ChatSession {
             }
         });
 
+        // Ollama requires /v1 suffix for the OpenAI-compatible endpoint.
+        // If base_url was set from env (e.g. "http://localhost:11434") it won't
+        // have /v1, so we append it here.
+        let base_url = base_url.map(|url| {
+            if self.config.provider == LLMProviderKind::Ollama
+                && !url.ends_with("/v1")
+            {
+                format!("{}/v1", url.trim_end_matches('/'))
+            } else {
+                url
+            }
+        });
+
         if let Some(url) = base_url {
             cfg = cfg.with_api_base(url);
         }

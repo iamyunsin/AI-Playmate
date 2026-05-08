@@ -3,5 +3,5 @@
 // On mobile the `lib` crate-type is used; on desktop `main.rs` wraps it.
 
 fn main() {
-    ai_playmate_desktop::run();
+    ai_playmate_desktop_lib::run();
 }

@@ -15,17 +15,17 @@ use crate::{types::MemoryEntry, MemoryError, Result};
 const MEMORY_TABLE: &str = "memory_entry";
 
 pub struct SemanticMemory {
-    vector_store: std::sync::Arc<QdrantStore>,
+    vector_store: Option<std::sync::Arc<QdrantStore>>,
     graph_store: std::sync::Arc<SurrealStore>,
-    embedder: std::sync::Arc<dyn EmbeddingProvider>,
+    embedder: Option<std::sync::Arc<dyn EmbeddingProvider>>,
     top_k: usize,
 }
 
 impl SemanticMemory {
     pub fn new(
-        vector_store: std::sync::Arc<QdrantStore>,
+        vector_store: Option<std::sync::Arc<QdrantStore>>,
         graph_store: std::sync::Arc<SurrealStore>,
-        embedder: std::sync::Arc<dyn EmbeddingProvider>,
+        embedder: Option<std::sync::Arc<dyn EmbeddingProvider>>,
         top_k: usize,
     ) -> Self {
         Self {
@@ -39,21 +39,23 @@ impl SemanticMemory {
     /// Embed and store a [`MemoryEntry`].
     #[instrument(skip(self, entry))]
     pub async fn store(&self, mut entry: MemoryEntry) -> Result<MemoryEntry> {
-        // Embed the content
-        let vector = self.embedder.embed(&entry.content).await?;
+        let (Some(vs), Some(emb)) = (&self.vector_store, &self.embedder) else {
+            // Qdrant unavailable — persist metadata only
+            self.graph_store
+                .upsert(MEMORY_TABLE, &entry.id.to_string(), entry.clone())
+                .await?;
+            return Ok(entry);
+        };
+
+        let vector = emb.embed(&entry.content).await?;
         entry.embedding = Some(vector.clone());
 
-        // Persist metadata in SurrealDB
         self.graph_store
-            .upsert(MEMORY_TABLE, &entry.id.to_string(), &entry)
+            .upsert(MEMORY_TABLE, &entry.id.to_string(), entry.clone())
             .await?;
 
-        // Persist vector in Qdrant
-        let payload = serde_json::to_value(&entry)
-            .map_err(MemoryError::Json)?;
-        self.vector_store
-            .upsert(entry.id, vector, payload)
-            .await?;
+        let payload = serde_json::to_value(&entry).map_err(MemoryError::Json)?;
+        vs.upsert(entry.id, vector, payload).await?;
 
         debug!(id = %entry.id, "Stored semantic memory");
         Ok(entry)
@@ -62,18 +64,17 @@ impl SemanticMemory {
     /// Find the `top_k` memories semantically closest to `query`.
     #[instrument(skip(self, query))]
     pub async fn search(&self, query: &str, top_k: Option<usize>) -> Result<Vec<MemoryEntry>> {
-        let k = top_k.unwrap_or(self.top_k) as u64;
-        let query_vec = self.embedder.embed(query).await?;
+        let (Some(vs), Some(emb)) = (&self.vector_store, &self.embedder) else {
+            return Ok(vec![]);
+        };
 
-        let hits = self
-            .vector_store
-            .search(query_vec, k, Some(0.3))
-            .await?;
+        let k = top_k.unwrap_or(self.top_k) as u64;
+        let query_vec = emb.embed(query).await?;
+        let hits = vs.search(query_vec, k, Some(0.3)).await?;
 
         let mut results = Vec::with_capacity(hits.len());
         for (_id, _score, payload) in hits {
-            let entry: MemoryEntry = serde_json::from_value(payload)
-                .map_err(MemoryError::Json)?;
+            let entry: MemoryEntry = serde_json::from_value(payload).map_err(MemoryError::Json)?;
             results.push(entry);
         }
 
@@ -85,7 +86,7 @@ impl SemanticMemory {
         if let Some(mut entry) = self.graph_store.get::<MemoryEntry>(MEMORY_TABLE, &id.to_string()).await? {
             entry.record_access();
             self.graph_store
-                .upsert(MEMORY_TABLE, &id.to_string(), &entry)
+                .upsert(MEMORY_TABLE, &id.to_string(), entry.clone())
                 .await?;
         }
         Ok(())

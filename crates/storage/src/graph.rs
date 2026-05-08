@@ -14,7 +14,6 @@
 use serde::{de::DeserializeOwned, Serialize};
 use surrealdb::{
     engine::local::{Db, SurrealKv},
-    opt::auth::Root,
     Surreal,
 };
 use tracing::{info, instrument};
@@ -30,12 +29,6 @@ impl SurrealStore {
     #[instrument(skip(config))]
     pub async fn new(config: &StorageConfig) -> Result<Self> {
         let db = Surreal::new::<SurrealKv>(&config.surreal_data_dir).await?;
-
-        db.signin(Root {
-            username: &config.surreal_user,
-            password: &config.surreal_pass,
-        })
-        .await?;
 
         db.use_ns(&config.surreal_namespace)
             .use_db(&config.surreal_database)
@@ -53,7 +46,6 @@ impl SurrealStore {
             .query(
                 r#"
                 DEFINE TABLE IF NOT EXISTS message SCHEMAFULL;
-                DEFINE FIELD IF NOT EXISTS id          ON message TYPE string;
                 DEFINE FIELD IF NOT EXISTS session_id  ON message TYPE string;
                 DEFINE FIELD IF NOT EXISTS role        ON message TYPE string;
                 DEFINE FIELD IF NOT EXISTS content     ON message TYPE string;
@@ -62,7 +54,6 @@ impl SurrealStore {
                 DEFINE INDEX IF NOT EXISTS idx_message_session ON message FIELDS session_id;
 
                 DEFINE TABLE IF NOT EXISTS memory_entry SCHEMAFULL;
-                DEFINE FIELD IF NOT EXISTS id               ON memory_entry TYPE string;
                 DEFINE FIELD IF NOT EXISTS content          ON memory_entry TYPE string;
                 DEFINE FIELD IF NOT EXISTS source_messages  ON memory_entry TYPE array;
                 DEFINE FIELD IF NOT EXISTS importance_score ON memory_entry TYPE float;
@@ -72,7 +63,6 @@ impl SurrealStore {
                 DEFINE FIELD IF NOT EXISTS tags             ON memory_entry TYPE array;
 
                 DEFINE TABLE IF NOT EXISTS entity SCHEMAFULL;
-                DEFINE FIELD IF NOT EXISTS id          ON entity TYPE string;
                 DEFINE FIELD IF NOT EXISTS name        ON entity TYPE string;
                 DEFINE FIELD IF NOT EXISTS entity_type ON entity TYPE string;
                 DEFINE FIELD IF NOT EXISTS description ON entity TYPE option<string>;
@@ -83,7 +73,6 @@ impl SurrealStore {
                 DEFINE TABLE IF NOT EXISTS entity_relation TYPE RELATION;
 
                 DEFINE TABLE IF NOT EXISTS session SCHEMAFULL;
-                DEFINE FIELD IF NOT EXISTS id         ON session TYPE string;
                 DEFINE FIELD IF NOT EXISTS title      ON session TYPE option<string>;
                 DEFINE FIELD IF NOT EXISTS created_at ON session TYPE datetime;
                 DEFINE FIELD IF NOT EXISTS updated_at ON session TYPE datetime;
@@ -98,14 +87,15 @@ impl SurrealStore {
     /// Insert or replace a record in `table` identified by `id`.
     pub async fn upsert<T>(&self, table: &str, id: &str, data: T) -> Result<()>
     where
-        T: Serialize,
+        T: Serialize + Send + Sync + 'static,
     {
-        let value = serde_json::to_value(data)
-            .map_err(|e| StorageError::Other(e.to_string()))?;
-        let _: Option<serde_json::Value> = self
+        // Use IgnoredAny to discard the returned record without attempting to
+        // deserialize it as serde_json::Value — serde_json cannot handle
+        // SurrealDB-native types like Datetime (serialized as a newtype_struct).
+        let _: Option<serde::de::IgnoredAny> = self
             .db
             .upsert((table, id))
-            .content(value)
+            .content(data)
             .await
             .map_err(StorageError::Surreal)?;
         Ok(())

@@ -32,7 +32,7 @@ impl EpisodicMemory {
     #[instrument(skip(self, message))]
     pub async fn store_message(&self, message: &Message) -> Result<()> {
         self.store
-            .upsert(MESSAGE_TABLE, &message.id.to_string(), message)
+            .upsert(MESSAGE_TABLE, &message.id.to_string(), message.clone())
             .await?;
         Ok(())
     }

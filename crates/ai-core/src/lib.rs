@@ -12,7 +12,7 @@ pub mod error;
 pub mod provider;
 pub mod session;
 
-pub use embedding::{EmbeddingProvider, LocalEmbedder};
+pub use embedding::{EmbeddingProvider, LocalEmbedder, OllamaEmbedder};
 pub use error::CoreError;
 pub use provider::{LLMConfig, LLMProviderKind};
 pub use session::ChatSession;

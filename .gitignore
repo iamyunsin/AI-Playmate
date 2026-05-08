@@ -20,7 +20,7 @@ apps/desktop/src-tauri/gen/
 .env
 .env.local
 .env.*.local
-
+data/
 # Editor / OS
 .vscode/settings.json
 .idea/

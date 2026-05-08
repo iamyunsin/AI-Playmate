@@ -47,7 +47,7 @@ impl EntityGraph {
                 entity.description = description;
             }
             self.store
-                .upsert(ENTITY_TABLE, &entity.id.to_string(), &entity)
+                .upsert(ENTITY_TABLE, &entity.id.to_string(), entity.clone())
                 .await?;
             return Ok(entity);
         }
@@ -62,7 +62,7 @@ impl EntityGraph {
             last_seen: now,
         };
         self.store
-            .upsert(ENTITY_TABLE, &entity.id.to_string(), &entity)
+            .upsert(ENTITY_TABLE, &entity.id.to_string(), entity.clone())
             .await?;
         debug!(name = %name, "Created entity");
         Ok(entity)

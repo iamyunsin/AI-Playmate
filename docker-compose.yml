@@ -1,0 +1,26 @@
+# AI Playmate — 本地开发所需外部服务
+#
+# 运行方式：
+#   docker compose up -d
+# 停止：
+#   docker compose down
+#
+# 注意：SurrealDB 和 Ollama 使用本地嵌入/本地进程，无需容器化。
+
+services:
+  # ── 向量数据库 (语义记忆) ──────────────────────────────────────────
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: ai-playmate-qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"   # HTTP API / Web UI: http://localhost:6333/dashboard
+      - "6334:6334"   # gRPC API (Rust SDK 使用)
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__GRPC_PORT=6334
+
+volumes:
+  qdrant_data:
+    name: ai-playmate-qdrant-data

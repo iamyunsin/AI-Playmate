@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use ai_playmate_core::{EmbeddingProvider, LLMConfig, LocalEmbedder};
+use ai_playmate_core::{EmbeddingProvider, LLMConfig, LocalEmbedder, OllamaEmbedder};
 use ai_playmate_storage::{QdrantStore, StorageConfig, SurrealStore};
 
 use crate::{
@@ -78,18 +78,61 @@ impl MemorySystem {
     pub async fn new(config: MemoryConfig) -> Result<Self> {
         // ── Storage layer ────────────────────────────────────────────────
         let surreal = Arc::new(SurrealStore::new(&config.storage).await?);
-        let qdrant = Arc::new(QdrantStore::new(&config.storage).await?);
-        let embedder: Arc<dyn EmbeddingProvider> = Arc::new(
-            LocalEmbedder::new().map_err(|e| crate::MemoryError::Other(e.to_string()))?,
-        );
+
+        // Qdrant is optional — if unavailable, semantic memory is disabled.
+        let qdrant_result = QdrantStore::new(&config.storage).await;
+        let qdrant_opt: Option<Arc<QdrantStore>> = match qdrant_result {
+            Ok(q) => Some(Arc::new(q)),
+            Err(e) => {
+                tracing::warn!(
+                    "Qdrant unavailable — semantic memory disabled. \
+                     Start Qdrant locally or set QDRANT_URL. Error: {e}"
+                );
+                None
+            }
+        };
+
+        // Embedder is only needed when Qdrant is available.
+        // Prefer OllamaEmbedder (no download needed) when OLLAMA_BASE_URL is set.
+        // Fall back to LocalEmbedder (fastembed) if Ollama embedding is unavailable.
+        let embedder_opt: Option<Arc<dyn EmbeddingProvider>> = if qdrant_opt.is_some() {
+            let ollama_url = std::env::var("OLLAMA_BASE_URL")
+                .unwrap_or_else(|_| "http://localhost:11434".to_string());
+            let ollama_embed_model = std::env::var("OLLAMA_EMBEDDING_MODEL")
+                .unwrap_or_else(|_| "qwen3-embedding:8b".to_string());
+            let ollama_embed_dim = std::env::var("OLLAMA_EMBEDDING_DIM")
+                .ok()
+                .and_then(|v| v.parse::<usize>().ok())
+                .unwrap_or(4096);
+            let embedder = OllamaEmbedder::new(ollama_url, ollama_embed_model, ollama_embed_dim);
+            // Quick smoke-test to verify connectivity.
+            match embedder.embed("test").await {
+                Ok(_) => {
+                    tracing::info!("OllamaEmbedder ready");
+                    Some(Arc::new(embedder) as Arc<dyn EmbeddingProvider>)
+                }
+                Err(e) => {
+                    tracing::warn!("OllamaEmbedder unavailable ({e}), trying LocalEmbedder");
+                    match LocalEmbedder::new() {
+                        Ok(e) => Some(Arc::new(e) as Arc<dyn EmbeddingProvider>),
+                        Err(e) => {
+                            tracing::warn!("LocalEmbedder also failed — semantic memory disabled: {e}");
+                            None
+                        }
+                    }
+                }
+            }
+        } else {
+            None
+        };
 
         // ── Memory layers ────────────────────────────────────────────────
         let core = Arc::new(CoreMemory::new(Arc::clone(&surreal), config.core_max_tokens));
         let episodic = Arc::new(EpisodicMemory::new(Arc::clone(&surreal), config.episodic_window));
         let semantic = Arc::new(SemanticMemory::new(
-            Arc::clone(&qdrant),
+            qdrant_opt,
             Arc::clone(&surreal),
-            Arc::clone(&embedder),
+            embedder_opt,
             config.semantic_top_k,
         ));
         let entity_graph = Arc::new(EntityGraph::new(Arc::clone(&surreal)));
